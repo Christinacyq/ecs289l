@@ -1,7 +1,14 @@
-checkpoints/
-data/images/
-pycocoevalcap/
-records/
-results/
+final_project/checkpoints/
+final_project/data/images/
+final_project/pycocoevalcap/
+final_project/records/
+final_project/results/
+baseline/data/images/
+
+baseline/records/
+baseline/results/
+baseline/wandb/
+__pycache__/
+
 
 
