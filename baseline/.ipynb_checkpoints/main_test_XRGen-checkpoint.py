@@ -1,30 +1,27 @@
 import torch
 import argparse
 import numpy as np
+import os
 from modules.tokenizers import Tokenizer
 from modules.dataloaders import XGDataLoader
 from modules.metrics import compute_scores
-from modules.optimizers import build_optimizer, build_lr_scheduler
-from modules.trainer import Trainer
+from modules.tester import Tester
 from modules.loss import compute_loss
 from modules.xgren import XGRenModel
-import wandb
-import os
+from modules.clinical_metrics import compute_medspacy_f1
 
-os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
 def parse_agrs():
     parser = argparse.ArgumentParser()
 
     # Data input settings
-    parser.add_argument('--image_dir', type=str, default='data/images/', help='the path to the directory containing the data.')
-    parser.add_argument('--ann_path', type=str, default='data/annotation.json', help='the path to the directory containing the data.')
-    parser.add_argument('--dataset_name', type=str, default='XRGen', help='the name of the dataset.')
+    parser.add_argument('--image_dir', type=str, default='data/images/', help='the path to the directory containing the image.')
+    parser.add_argument('--ann_path', type=str, default='data/annotation.json', help='the path to the directory containing the report.')
 
     # Data loader settings
     parser.add_argument('--use_topic', type=bool, default=True, help='whether use topic.')
-    parser.add_argument('--topic_type', type=list, default=['iu'], help='body parts to be used.')
+    parser.add_argument('--topic_type', type=list, default=['iu', 'knee', 'axr', 'shoulder', 'hip', 'wrist'], choices=['iu', 'knee', 'axr', 'shoulder', 'hip', 'wrist'], help='body parts to be used.')
 
     parser.add_argument('--max_seq_length', type=int, default=60, help='the maximum sequence length of the reports for decoding.')
     parser.add_argument('--max_seq_length_bert', type=int, default=80, help='the maximum sequence length of the reports for contrastive learning.')
@@ -71,30 +68,14 @@ def parse_agrs():
     # Trainer settings
     parser.add_argument('--n_gpu', type=int, default=1, help='the number of gpus to be used.')
     parser.add_argument('--epochs', type=int, default=100, help='the number of training epochs.')
-    parser.add_argument('--save_dir', type=str, default='results/XRGen', help='the patch to save the models.')
-    parser.add_argument('--record_dir', type=str, default='records/', help='the patch to save the results of experiments')
-    parser.add_argument('--save_period', type=int, default=1, help='the saving period.')
-    parser.add_argument('--monitor_mode', type=str, default='max', choices=['min', 'max'], help='whether to max or min the metric.')
-    parser.add_argument('--monitor_metric', type=str, default='BLEU_4', help='the metric to be monitored.')
-    parser.add_argument('--early_stop', type=int, default=20, help='the patience of training.')
+    parser.add_argument('--save_dir', type=str, default='results/XRGen_', help='the patch to save the models.')
     parser.add_argument('--use_rag', action='store_true', help='Enable retrieval-augmented generation')
 
-
-    # Optimization
-    parser.add_argument('--optim', type=str, default='Adam', help='the type of the optimizer.')
-    parser.add_argument('--lr_ve', type=float, default=5e-5, help='the learning rate for the visual extractor.')
-    parser.add_argument('--lr_ed', type=float, default=1e-4, help='the learning rate for the remaining parameters.')
-    parser.add_argument('--weight_decay', type=float, default=1e-4, help='the weight decay.')
-    parser.add_argument('--amsgrad', type=bool, default=True, help='.')
-
-    # Learning Rate Scheduler
-    parser.add_argument('--lr_scheduler', type=str, default='StepLR', help='the type of the learning rate scheduler.')
-    parser.add_argument('--step_size', type=int, default=50, help='the step size of the learning rate scheduler.')
-    parser.add_argument('--gamma', type=float, default=0.1, help='the gamma of the learning rate scheduler.')
-
     # Others
-    parser.add_argument('--seed', type=int, default=123, help='.')
-    parser.add_argument('--resume', type=str, default=None, help='whether to resume the training from existing checkpoints.')
+    parser.add_argument('--seed', type=int, default=9233, help='.')
+    parser.add_argument('--resume', type=str, help='whether to resume the training from existing checkpoints.')
+    parser.add_argument('--load', type=str, default='results/XRGen_/model_best.pth', help='whether to load a pre-trained model.')
+    parser.add_argument('--split', type=str, default='test', help='whether to load a pre-trained model.')
 
     args = parser.parse_args()
     return args
@@ -103,23 +84,18 @@ def parse_agrs():
 def main():
     # parse arguments
     args = parse_agrs()
-    wandb.init(project='X-RGen', name=args.save_dir.split('/')[1])
 
     # fix random seeds
     torch.manual_seed(args.seed)
-    torch.cuda.manual_seed_all(args.seed)
-    np.random.seed(args.seed)
     torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    np.random.seed(args.seed)
 
-    # create tokenizer        
+    # create tokenizer
     tokenizer = Tokenizer(args)
 
     # create data loader
-    train_dataloader = XGDataLoader(args, tokenizer, split='train', shuffle=True)
-    val_dataloader = XGDataLoader(args, tokenizer, split='val', shuffle=False)
-    test_dataloader = XGDataLoader(args, tokenizer, split='test', shuffle=False)
-
-    print("\n".join("%s: %s" % (k, str(v)) for k, v in sorted(dict(vars(args)).items())))
+    test_dataloader = XGDataLoader(args, tokenizer, split=args.split, shuffle=False)
 
     # build model architecture
     model = XGRenModel(args, tokenizer)
@@ -128,15 +104,13 @@ def main():
     criterion = compute_loss
     metrics = compute_scores
 
-    # build optimizer, learning rate scheduler
-    optimizer = build_optimizer(args, model)
-    lr_scheduler = build_lr_scheduler(args, optimizer)
+    os.makedirs(args.save_dir, exist_ok=True)
 
     # build trainer and start to train
-    trainer = Trainer(model, criterion, metrics, optimizer, args, lr_scheduler, train_dataloader, val_dataloader, test_dataloader)
-    trainer.train()
+    tester = Tester(model, criterion, metrics, args, test_dataloader)
+    # tester.test()
+    tester.test()
 
-    wandb.finish()
 
 if __name__ == '__main__':
     main()

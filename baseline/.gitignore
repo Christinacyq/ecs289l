@@ -1,0 +1,6 @@
+results/XRGen
+data
+pycocoevalcap
+*.ipynb
+models/model_best.pth
+models/medclip-pretrained

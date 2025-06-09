@@ -1,12 +1,15 @@
 import torch
 import argparse
 import numpy as np
+import os
 from modules.tokenizers import Tokenizer
 from modules.dataloaders import XGDataLoader
 from modules.metrics import compute_scores
 from modules.tester import Tester
 from modules.loss import compute_loss
 from modules.xgren import XGRenModel
+
+
 
 
 def parse_agrs():
@@ -66,6 +69,7 @@ def parse_agrs():
     parser.add_argument('--n_gpu', type=int, default=1, help='the number of gpus to be used.')
     parser.add_argument('--epochs', type=int, default=100, help='the number of training epochs.')
     parser.add_argument('--save_dir', type=str, default='results/XRGen_', help='the patch to save the models.')
+    parser.add_argument('--use_rag', action='store_true', help='Enable retrieval-augmented generation')
 
     # Others
     parser.add_argument('--seed', type=int, default=9233, help='.')
@@ -99,6 +103,8 @@ def main():
     # get function handles of loss and metrics
     criterion = compute_loss
     metrics = compute_scores
+
+    os.makedirs(args.save_dir, exist_ok=True)
 
     # build trainer and start to train
     tester = Tester(model, criterion, metrics, args, test_dataloader)
